@@ -1,11 +1,18 @@
 INPUT = File.read("day1.txt").lines.map(&.chomp.to_i32) 
 
 def part1
-  input = INPUT.clone
-  input.each_with_index do |v, i|
-    input.each_with_index do |v2, j|
-      next unless v + v2 == 2020 && i != j
-      puts v*v2
+  input = INPUT.clone.sort!
+  bottom = 0
+  top = input.size - 1
+  loop do
+    sum = input[bottom] + input[top]
+    if sum == 2020
+      puts input[bottom] * input[top] 
+      return
+    elsif sum > 2020
+      top -= 1
+    else
+      bottom += 1
     end
   end
 end
