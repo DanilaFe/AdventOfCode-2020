@@ -1,4 +1,4 @@
-INPUT = File.read("dayN.txt")#.lines.map(&.trim) 
+INPUT = File.read("dayN.txt")#.lines.map(&.chomp) 
 
 def part1
   input = INPUT.clone
