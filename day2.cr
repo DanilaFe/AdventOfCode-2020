@@ -30,7 +30,7 @@ def part2
     min, max, char, str = data
     min -= 1
     max -= 1
-    ((str[min] == char) || (str[max] == char) ) && str[min] != str[max]
+    (str[min] == char) ^ (str[max] == char)
   end
 
   puts total
