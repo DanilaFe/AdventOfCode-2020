@@ -1,4 +1,4 @@
-INPUT = File.read("day4.txt").lines.map(&.chomp) 
+INPUT = File.read("day4.txt")
 
 def parse_passport(string)
   new_hash = {} of String => String
@@ -10,19 +10,9 @@ def parse_passport(string)
 end
 
 def parse_passports(lines)
-  passports = [] of Hash(String, String)
-  passport = [] of String
-
-  lines.each do |line|
-    unless line.empty?
-      passport << line
-      next
-    end
-
-    passports << parse_passport(passport.join(" "))
-    passport = [] of String
+  lines.split(/\n\n/).map do |s|
+    parse_passport(s.chomp.gsub(/\n/, " "))
   end
-  passports << parse_passport(passport.join(" "))
 end
 
 def part1
@@ -36,42 +26,33 @@ def part1
   puts total
 end
 
+def validate_range(range)
+  ->(s : String) { s.to_i32?.try { |i| range.includes? i } }
+end
+
+def validate_regex(regex)
+  ->(s : String) { s.matches?(regex) }
+end
+
 def part2
   input = INPUT.clone
   passports = parse_passports(input)
+  validators = {
+    "byr" => validate_range(1920..2002),
+    "iyr" => validate_range(2010..2020),
+    "eyr" => validate_range(2020..2030),
+    "hgt" => ->(s : String) {
+      return false unless s.match(/^(\d+)(cm|in)$/)
+      validate_range($~[2] == "cm" ? (150..193) : (59..76)).call($~[1])
+    },
+    "hcl" => validate_regex(/^#[0-9a-f]{6}$/),
+    "ecl" => ->(s : String) { "amb blu brn gry grn hzl oth".split(" ").includes? s },
+    "pid" => ->(s : String) { s =~ /^[0-9]{9}$/ },
+  }
   total = passports.count do |passport|
-    next unless value = passport["byr"]?
-    value = value.to_i32
-    next unless value >= 1920 && value <= 2002
-
-    next unless value = passport["iyr"]?
-    value = value.to_i32
-    next unless value >= 2010 && value <= 2020
-  
-    next unless value = passport["eyr"]?
-    value = value.to_i32
-    next unless value >= 2020 && value <= 2030
-
-    next unless value = passport["hgt"]?
-    next unless value.ends_with?("cm") || value.ends_with?("in")
-    ivalue = value[0..-3].to_i32
-    if value.ends_with? "cm"
-      next unless ivalue >= 150 && ivalue <= 193
-    else
-      next unless ivalue >= 59 && ivalue <= 76
+    validators.all? do |k, v|
+      passport[k]?.try { |s| v.call(s) }
     end
-
-    next unless value = passport["hcl"]?
-    next unless value[0] == '#' && (value[1..]).to_i32(16)
-
-    next unless value = passport["ecl"]?
-    next unless "amb blu brn gry grn hzl oth".split(" ").includes? value
-
-    next unless value = passport["pid"]?
-    next unless value.size == 9
-    next unless value = value.to_i32?
-  
-    true
   end
   puts total
 end
