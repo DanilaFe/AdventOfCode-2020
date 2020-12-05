@@ -7,3 +7,6 @@ end
 def part2
   input = INPUT.clone
 end
+
+part1
+part2
