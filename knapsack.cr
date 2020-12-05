@@ -27,7 +27,6 @@ class Array(T)
     value = compute.call(size, budget)
     i = size
     items = [] of T
-    puts bt
     while i != 0
       if bt[{i, budget}]
         items << self[i-1]
