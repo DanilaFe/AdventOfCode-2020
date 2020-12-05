@@ -1,0 +1,13 @@
+name: advent-2020
+version: 0.1.0
+
+authors:
+  - your-name-here <your-email-here>
+
+dependencies:
+  advent:
+    git: https://dev.danilafe.com/Advent-of-Code/advent
+
+crystal: 0.35.1
+
+license: MIT
