@@ -15,12 +15,13 @@ end
 def part2
   input = INPUT.clone
   passports = parse_passports(input)
-  total = passports.count do |passport|
-    DEFAULT_VALIDATORS.all? do |k, v|
-      passport[k]?.try { |s| v.call(s) }
+  valid_passports = [] of Passport
+  passports.each do |p|
+    if vp = Passport.from_hash?(p)
+      valid_passports << vp 
     end
   end
-  puts total
+  puts valid_passports.size
 end
 
 part1
