@@ -1,4 +1,5 @@
-INPUT = File.read("day3.txt").lines.map(&.chomp) 
+require "advent"
+INPUT = input(2020, 3).lines.map(&.chomp) 
 
 def run(input, slopes)
   prod = 1_i64

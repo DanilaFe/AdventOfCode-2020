@@ -1,4 +1,5 @@
-INPUT = File.read("day2.txt").lines.map(&.chomp) 
+require "advent"
+INPUT = input(2020, 2).lines.map(&.chomp) 
 
 def parse(line)
     data = line.match(/([0-9]+)-([0-9]+) ([a-z]): ([a-z]+)/) 

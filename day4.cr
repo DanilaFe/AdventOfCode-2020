@@ -1,5 +1,6 @@
 require "./passports.cr"
-INPUT = File.read("day4.txt")
+require "advent"
+INPUT = input(2020, 4)
 
 def part1
   input = INPUT.clone

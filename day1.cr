@@ -1,4 +1,5 @@
-INPUT = File.read("day1.txt").lines.map(&.chomp.to_i32) 
+require "advent"
+INPUT = input(2020, 1).lines.map(&.chomp.to_i32) 
 
 def part1
   input = INPUT.clone.sort!

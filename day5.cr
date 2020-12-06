@@ -1,4 +1,5 @@
-INPUT = File.read("day5.txt").lines.map(&.chomp) 
+require "advent"
+INPUT = input(2020, 5).lines.map(&.chomp) 
 
 def partition(choices, list)
   b = 0
