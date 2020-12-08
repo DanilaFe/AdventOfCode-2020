@@ -1,31 +1,7 @@
 require "advent"
-INPUT = input(2020, 8).lines
-
-def part1
-  acc = 0
-  pc = 0
-  visited = Set(Int32).new
-  input = INPUT.clone.map do |s|
-    code, int = s.split(" ")
-    {code, int.to_i32}
-  end
-
-  loop do
-    if visited.includes? pc
-      break
-    end
-    visited << pc
-    code, int = input[pc]
-    case input[pc][0]
-    when "acc"
-      acc += int
-      pc += 1
-    when "jmp"
-      pc += int
-    when "nop"
-      pc += 1
-    end
-  end
+INPUT = input(2020, 8).lines.map do |s|
+  code, int = s.split(" ")
+  {code, int.to_i32}
 end
 
 def run(prog)
@@ -33,50 +9,34 @@ def run(prog)
   pc = 0
   visited = Set(Int32).new
   loop do
-    if visited.includes? pc
-      return false
-    end
-    return acc if pc >= prog.size
+    return {:term, acc} if pc >= prog.size
+    return {:inf, acc} if visited.includes? pc
+      
     visited << pc
     code, int = prog[pc]
-    case prog[pc][0]
+    case code
     when "acc"
       acc += int
-      pc += 1
     when "jmp"
-      pc += int
-    when "nop"
-      pc += 1
+      pc += int - 1
     end
+    pc += 1
   end
 end
 
+def part1
+  run(INPUT)[1]
+end
+
 def part2
-  input = INPUT.clone.map do |s|
-    code, int = s.split(" ")
-    {code, int.to_i32}
-  end
-
-  jnp = [] of Int32
-  input.each_with_index do |e, i|
-    op, int = e
-    jnp << i if op == "jmp" || op == "nop"
-  end
-
+  jnp = INPUT.find_indices { |e| e[0] == "jmp" || e[0] == "nop" }
   jnp.each do |i|
-    prog = input.clone
-    if prog[i][0] == "jmp"
-      prog[i] = {"nop", prog[i][1]}
-    else
-      prog[i] = {"jmp", prog[i][1]}
-    end
+    prog = INPUT.clone
+    op, int = prog[i]
+    prog[i] = {op.tr("jmpnop", "nopjmp"), int}
 
-    case i = run(prog)
-    when Bool
-      next
-    when Int32
-      return i
-    end
+    code, acc = run(prog)
+    return acc if code == :term
   end
 end
 

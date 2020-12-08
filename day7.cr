@@ -2,18 +2,19 @@ require "advent"
 
 INPUT = input(2020, 7).lines.map(&.chomp).map do |s|
   data = s.match(/^([a-z ]+) bags contain (.*).$/).not_nil!
-  {data[1], data[2].split(", ").map(&.rchop(" bags").rchop(" bag")) }
+  contents = data[2].split(", ").compact_map do |s|
+    s.match(/(\d+) (.*) bags?/).try { |m| {m[1].to_i32, m[2]} }
+  end
+  {data[1], contents}
 end
 
 def build_graph(input)
   gr = Graph(String).new
   seen = Set(String).new
   input.each do |i|
-    next if i[1] == ["no other"]
     seen << i[0]
     i[1].each do |to|
-      n, _, m = to.partition(" ")
-      n = n.to_i32
+      n, m = to
       gr.add_edge(i[0], m, n)
     end
   end
