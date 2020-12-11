@@ -1,41 +1,21 @@
 require "advent"
-INPUT = input(2020, 8).lines.map do |s|
-  code, int = s.split(" ")
-  {code, int.to_i32}
-end
+require "./console.cr"
 
-def run(prog)
-  acc = 0
-  pc = 0
-  visited = Set(Int32).new
-  loop do
-    return {:term, acc} if pc >= prog.size
-    return {:inf, acc} if visited.includes? pc
-      
-    visited << pc
-    code, int = prog[pc]
-    case code
-    when "acc"
-      acc += int
-    when "jmp"
-      pc += int - 1
-    end
-    pc += 1
-  end
-end
+INPUT = input(2020, 8)
 
 def part1
-  run(INPUT)[1]
+  run(parse(INPUT))[1].receive[1]
 end
 
 def part2
-  jnp = INPUT.find_indices { |e| e[0] == "jmp" || e[0] == "nop" }
+  input = parse(INPUT)
+  jnp = input.find_indices { |e| e[0] == "jmp" || e[0] == "nop" }
   jnp.each do |i|
-    prog = INPUT.clone
+    prog = input.clone
     op, int = prog[i]
     prog[i] = {op.tr("jmpnop", "nopjmp"), int}
 
-    code, acc = run(prog)
+    code, acc = run(prog)[1].receive
     return acc if code == :term
   end
 end
