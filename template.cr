@@ -1,13 +1,11 @@
 require "advent"
-INPUT = input(2020, n)#.lines.map(&.chomp) 
+INPUT = input(2020, n)#.lines.map(&.to_i32) 
 
-def part1
-  input = INPUT.clone
+def part1(input)
 end
 
-def part2
-  input = INPUT.clone
+def part2(input)
 end
 
-part1
-part2
+puts part1(INPUT.clone)
+puts part2(INPUT.clone)
