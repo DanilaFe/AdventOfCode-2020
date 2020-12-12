@@ -1,4 +1,5 @@
 require "advent"
+DISTS = [{1, 0}, {0, 1}, {-1, 0}, {0, -1}]
 INPUT = input(2020, 12).lines.map do |l|
   {l[0], l[1..].to_i32}
 end
@@ -8,21 +9,14 @@ def part1(input)
   angle = 0
   input.each do |c, n|
     case c
-    when 'N'
-      pos = pos.add({0, n})
-    when 'S'
-      pos = pos.add({0, -n})
-    when 'E'
-      pos = pos.add({n, 0})
-    when 'W'
-      pos = pos.add({-n, 0})
-    when 'L'
-      angle = (angle + n) % 360
-    when 'R'
-      angle = (angle + (360-n)) % 360
+    when 'N' then pos = pos.add({0, n})
+    when 'S' then pos = pos.add({0, -n})
+    when 'E' then pos = pos.add({n, 0})
+    when 'W' then pos = pos.add({-n, 0})
+    when 'L' then angle = (angle + n) % 360
+    when 'R' then angle = (angle + (360-n)) % 360
     when 'F'
-      dists = [{1, 0}, {0, 1}, {-1, 0}, {0, -1}]
-      dx, dy = dists[angle//90]
+      dx, dy = DISTS[angle//90]
       pos = pos.add({dx * n, dy * n})
     end
   end
@@ -35,24 +29,13 @@ def part2(input)
   angle = 0
   input.each do |c, n|
     case c
-    when 'N'
-      pos = pos.add({0, n})
-    when 'S'
-      pos = pos.add({0, -n})
-    when 'E'
-      pos = pos.add({n, 0})
-    when 'W'
-      pos = pos.add({-n, 0})
-    when 'L'
-      (n//90).times do
-        pos = {-pos[1], pos[0]}
-      end
-    when 'R'
-      (n//90).times do
-        pos = {pos[1], -pos[0]}
-      end
-    when 'F'
-      spos = spos.add({pos[0] * n, pos[1]*n})
+    when 'N' then pos = pos.add({0, n})
+    when 'S' then pos = pos.add({0, -n})
+    when 'E' then pos = pos.add({n, 0})
+    when 'W' then pos = pos.add({-n, 0})
+    when 'L' then (n//90).times { pos = {-pos[1], pos[0]} }
+    when 'R' then (n//90).times { pos = {pos[1], -pos[0]} }
+    when 'F' then spos = spos.add({pos[0] * n, pos[1]*n})
     end
   end
   spos.map(&.abs).sum
