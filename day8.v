@@ -51,49 +51,11 @@ Module DayEight (Import M:Int).
     | FS f' => FS (weaken_one f')
     end.
 
-  (* One modification: we really want to use 'allowed' addresses,
-     a set that shrinks as the program continues, rather than 'visited'
-     addresses, a set that increases as the program continues. *)
-  Inductive step_noswap {n} : input n -> state n -> state n -> Prop :=
-    | step_noswap_add : forall inp pc' v acc t,
-        nth inp pc' = (add, t) ->
-        set_mem Fin.eq_dec pc' v = true ->
-        step_noswap inp (weaken_one pc', v, acc) (FS pc', set_remove Fin.eq_dec pc' v, M.add acc t)
-    | step_noswap_nop : forall inp pc' v acc t,
-        nth inp pc' = (nop, t) ->
-        set_mem Fin.eq_dec pc' v = true ->
-        step_noswap inp (weaken_one pc', v, acc) (FS pc', set_remove Fin.eq_dec pc' v, acc)
-    | step_noswap_jmp : forall inp pc' pc'' v acc t,
-        nth inp pc' = (jmp, t) ->
-        set_mem Fin.eq_dec pc' v = true ->
-        valid_jump_t pc' t = Some pc'' ->
-        step_noswap inp (weaken_one pc', v, acc) (pc'', set_remove Fin.eq_dec pc' v, acc).
-
   Fixpoint nat_to_fin (n : nat) : fin (S n) :=
     match n with
     | O => F1
     | S n' => FS (nat_to_fin n')
     end.
-
-  Inductive run_noswap {n} : input n -> state n -> state n -> Prop :=
-    | run_noswap_ok : forall inp v acc,
-        run_noswap inp (nat_to_fin n, v, acc) (nat_to_fin n, v, acc)
-    | run_noswap_fail : forall inp pc' v acc,
-        set_mem Fin.eq_dec pc' v = false ->
-        run_noswap inp (weaken_one pc', v, acc) (weaken_one pc', v, acc)
-    | run_noswap_trans : forall inp st st' st'',
-        step_noswap inp st st' -> run_noswap inp st' st'' -> run_noswap inp st st''.
-
-  Inductive valid_inst {n} : inst -> fin n -> Prop :=
-    | valid_inst_add : forall t f, valid_inst (add, t) f
-    | valid_inst_nop : forall t f f',
-        valid_jump_t f t = Some f' -> valid_inst (nop, t) f
-    | valid_inst_jmp : forall t f f',
-        valid_jump_t f t = Some f' -> valid_inst (jmp, t) f.
-
-  (* An input is valid if all its instructions are valid. *)
-  Definition valid_input {n} (inp : input n) : Prop := forall (pc : fin n),
-    valid_inst (nth inp pc) pc.
 
   Lemma fin_big_or_small : forall {n} (f : fin (S n)),
     (f = nat_to_fin n) \/ (exists (f' : fin n), f = weaken_one f').
@@ -114,6 +76,311 @@ Module DayEight (Import M:Int).
         exists (FS f'). simpl. rewrite Heq.
         reflexivity.
   Qed.
+  
+  Lemma weaken_one_inj : forall n (f1 f2 : fin n),
+    (weaken_one f1 = weaken_one f2 -> f1 = f2).
+  Proof. 
+    remember (fun {n} (a b : fin n) => weaken_one a = weaken_one b -> a = b) as P.
+    (* Base case for rect2 *)
+    assert (forall n, @P (S n) F1 F1).
+    {rewrite HeqP. intros n Heq. reflexivity. }
+    (* 'Impossible' cases for rect2. *)
+    assert (forall {n} (f : fin n), P (S n) F1 (FS f)).
+    {rewrite HeqP. intros n f Heq. simpl in Heq. inversion Heq. }
+    assert (forall {n} (f : fin n), P (S n) (FS f) F1).
+    {rewrite HeqP. intros n f Heq. simpl in Heq. inversion Heq. }
+    (* Recursive case for rect2. *)
+    assert (forall {n} (f g : fin n), P n f g -> P (S n) (FS f) (FS g)).
+    {rewrite HeqP. intros n f g IH Heq.
+      simpl in Heq. injection Heq as Heq'.
+      apply inj_pair2_eq_dec in Heq'.
+      - rewrite IH. reflexivity. assumption.
+      - apply eq_nat_dec. }
+
+    (* Actually apply recursion. *)
+    (* This can't be _the_ way to do this. *)
+    intros n.
+    specialize (@Fin.rect2 P H H0 H1 H2 n) as Hind.
+    rewrite HeqP in Hind. apply Hind.
+  Qed.
+
+  Lemma weaken_neq_to_fin : forall {n} (f : fin (S n)),
+    nat_to_fin (S n) <> weaken_one f.
+  Proof.
+    apply Fin.rectS; intros n Heq.
+    - inversion Heq.
+    - intros IH. simpl. intros Heq'.
+      injection Heq' as Hinj. apply inj_pair2_eq_dec in Hinj.
+      + simpl in IH. apply IH. apply Hinj.
+      + apply eq_nat_dec.
+  Qed.
+
+  (* One modification: we really want to use 'allowed' addresses,
+     a set that shrinks as the program continues, rather than 'visited'
+     addresses, a set that increases as the program continues. *)
+  Inductive step_noswap {n} : input n -> state n -> state n -> Prop :=
+    | step_noswap_add : forall inp pc' v acc t,
+        nth inp pc' = (add, t) ->
+        set_In pc' v ->
+        step_noswap inp (weaken_one pc', v, acc) (FS pc', set_remove Fin.eq_dec pc' v, M.add acc t)
+    | step_noswap_nop : forall inp pc' v acc t,
+        nth inp pc' = (nop, t) ->
+        set_In pc' v ->
+        step_noswap inp (weaken_one pc', v, acc) (FS pc', set_remove Fin.eq_dec pc' v, acc)
+    | step_noswap_jmp : forall inp pc' pc'' v acc t,
+        nth inp pc' = (jmp, t) ->
+        set_In pc' v ->
+        valid_jump_t pc' t = Some pc'' ->
+        step_noswap inp (weaken_one pc', v, acc) (pc'', set_remove Fin.eq_dec pc' v, acc).
+
+  Inductive done {n} : input n -> state n -> Prop :=
+    | done_prog : forall inp v acc, done inp (nat_to_fin n, v, acc).
+
+  Inductive stuck {n} : input n -> state n -> Prop :=
+    | stuck_prog : forall inp pc' v acc,
+        ~ set_In pc' v -> stuck inp (weaken_one pc', v, acc).
+
+  Inductive run_noswap {n} : input n -> state n -> state n -> Prop :=
+    | run_noswap_ok : forall inp st, done inp st -> run_noswap inp st st
+    | run_noswap_fail : forall inp st, stuck inp st -> run_noswap inp st st
+    | run_noswap_trans : forall inp st st' st'',
+        step_noswap inp st st' -> run_noswap inp st' st'' -> run_noswap inp st st''.
+
+  Inductive valid_inst {n} : inst -> fin n -> Prop :=
+    | valid_inst_add : forall t f, valid_inst (add, t) f
+    | valid_inst_nop : forall t f f',
+        valid_jump_t f t = Some f' -> valid_inst (nop, t) f
+    | valid_inst_jmp : forall t f f',
+        valid_jump_t f t = Some f' -> valid_inst (jmp, t) f.
+
+  (* An input is valid if all its instructions are valid. *)
+  Definition valid_input {n} (inp : input n) : Prop := forall (pc : fin n),
+    valid_inst (nth inp pc) pc.
+
+  Section ValidInput.
+    Variable n : nat.
+    Variable inp : input n.
+    Hypothesis Hv : valid_input inp.
+
+    Lemma step_if_possible : forall pcs v acc,
+      set_In pcs v ->
+      exists pc' acc', step_noswap inp (weaken_one pcs, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc').
+    Proof.
+      intros pcs v acc Hin.
+      remember (nth inp pcs) as instr. destruct instr as [op t]. destruct op.
+      + exists (FS pcs). exists (M.add acc t). apply step_noswap_add; auto.
+      + exists (FS pcs). exists acc. apply step_noswap_nop with t; auto.
+      + unfold valid_input in Hv. specialize (Hv pcs).
+        rewrite <- Heqinstr in Hv. inversion Hv; subst.
+        exists f'. exists acc. apply step_noswap_jmp with t; auto.
+    Qed.
+
+    Theorem valid_input_progress : forall pc v acc,
+      (pc = nat_to_fin n /\ done inp (pc, v, acc)) \/
+      exists pcs, pc = weaken_one pcs /\
+        ((~ set_In pcs v /\ stuck inp (pc, v, acc)) \/
+         (exists pc' acc', set_In pcs v /\ step_noswap inp (pc, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc'))).
+    Proof.
+      intros pc v acc.
+      (* Have we reached the end? *)
+      destruct (fin_big_or_small pc).
+      (* We're at the end, so we're done. *)
+      left. rewrite H. split. reflexivity. apply done_prog.
+      (* We're not at the end. Is the PC valid? *)
+      right. destruct H as [pcs H]. exists pcs. rewrite H. split. reflexivity.
+      destruct (set_In_dec Fin.eq_dec pcs v).
+      - (* It is. *)
+        right.
+        destruct (step_if_possible pcs v acc) as [pc' [acc' Hstep]]; auto.
+        exists pc'. exists acc'. split; auto.
+      - (* It i not. *)
+        left. split; auto. apply stuck_prog; auto.
+    Qed.
+
+    Theorem run_ok_or_fail : forall st st',
+      run_noswap inp st st' ->
+      (exists v acc, st' = (nat_to_fin n, v, acc) /\ done inp st') \/
+      (exists pcs v acc, st' = (weaken_one pcs, v, acc) /\ stuck inp st').
+    Proof.
+      intros st st' Hr.
+      induction Hr.
+      - left. inversion H; subst. exists v. exists acc. auto.
+      - right. inversion H; subst. exists pc'. exists v. exists acc. auto.
+      - apply IHHr; auto.
+    Qed.
+
+    Theorem set_induction {A : Type}
+      (Aeq_dec : forall (x y : A), { x = y } + { x <> y })
+      (P : set A -> Prop) :
+      P (@empty_set A) -> (forall a st, P (set_remove Aeq_dec a st) -> P st) ->
+      forall st, P st.
+    Proof. Admitted.
+
+    (* Theorem add_terminates_later : forall pcs a v acc,
+      List.NoDup v -> pcs <> a ->
+      (forall pc' acc', exists st', run_noswap inp (pc', set_remove Fin.eq_dec a v, acc') st') ->
+      exists st', run_noswap inp (weaken_one pcs, v, acc) st'.
+    Proof.
+      intros pcs a v acc Hnd Hneq He.
+      assert (exists st', run_noswap inp (weaken_one pcs, set_remove Fin.eq_dec a v, acc) st').
+      { specialize (He (weaken_one pcs) acc). apply He. } 
+      destruct H as [st' Hr].
+      inversion Hr; subst.
+      - inversion H. destruct n. inversion pcs. apply weaken_neq_to_fin in H2 as [].
+      - inversion H; subst. apply weaken_one_inj in H0. subst.
+        eexists. eapply run_noswap_fail. apply stuck_prog.
+        intros Hin. apply H2. apply set_remove_3; auto.
+      - 
+        inversion H; subst; apply weaken_one_inj in H1; subst.
+        + eexists. eapply run_noswap_trans. apply step_noswap_add.
+          * apply H6.
+          * apply (@set_remove_1 _ Fin.eq_dec pcs a v H7).
+          * 
+
+      destruct He as [st' Hr].
+      dependent induction Hr.
+      - inversion H. destruct n. inversion pcs. apply weaken_neq_to_fin in H2 as [].
+      - inversion H; subst. apply weaken_one_inj in H0. subst.
+        eexists. eapply run_noswap_fail. apply stuck_prog.
+        intros Hin. apply H2. apply set_remove_3; auto.
+       - destruct st' as [[pc' v'] a']. *)
+
+    Lemma set_remove_comm : forall {A:Type} Aeq_dec a b (st : set A),
+      set_remove Aeq_dec a (set_remove Aeq_dec b st) = set_remove Aeq_dec b (set_remove Aeq_dec a st).
+    Admitted.
+
+    Theorem remove_pc_safe : forall pc a v acc,
+      List.NoDup v ->
+      (exists st', run_noswap inp (pc, v, acc) st') ->
+      exists st', run_noswap inp (pc, set_remove Fin.eq_dec a v, acc) st'.
+    Proof.
+      intros pc a v acc Hnd [st' He].
+      dependent induction He.
+      - inversion H; subst.
+        eexists. apply run_noswap_ok. apply done_prog.
+      - inversion H; subst.
+        eexists. apply run_noswap_fail. apply stuck_prog.
+        intros Contra. apply H2. eapply set_remove_1. apply Contra.
+      - destruct st' as [[pc' v'] acc'].
+        inversion H; subst; destruct (Fin.eq_dec pc'0 a); subst.
+        + eexists. apply run_noswap_fail. apply stuck_prog.
+          intros Contra. apply set_remove_2 in Contra; auto.
+        + edestruct IHHe; auto. apply set_remove_nodup; auto. 
+          eexists. eapply run_noswap_trans.
+          * apply step_noswap_add. apply H3. apply set_remove_iff; auto.
+          * rewrite set_remove_comm. apply H0.
+        + eexists. apply run_noswap_fail. apply stuck_prog.
+          intros Contra. apply set_remove_2 in Contra; auto.
+        + edestruct IHHe; auto. apply set_remove_nodup; auto. 
+          eexists. eapply run_noswap_trans.
+          * apply step_noswap_nop with t0. apply H3. apply set_remove_iff; auto.
+          * rewrite set_remove_comm. apply H0.
+        + eexists. apply run_noswap_fail. apply stuck_prog.
+          intros Contra. apply set_remove_2 in Contra; auto.
+        + edestruct IHHe; auto. apply set_remove_nodup; auto. 
+          eexists. eapply run_noswap_trans.
+          * apply step_noswap_jmp with t0. apply H5. apply set_remove_iff; auto.
+            apply H9.
+          * rewrite set_remove_comm. apply H0.
+    Qed.
+
+    Theorem valid_input_terminates : forall pc v acc,
+      List.NoDup v ->  exists st', run_noswap inp (pc, v, acc) st'.
+    Proof.
+      intros pc v acc.
+      generalize dependent pc. generalize dependent acc.
+      induction v as [|a v] using (@set_induction _ Fin.eq_dec); intros acc pc Hnd.
+      - destruct (valid_input_progress pc (empty_set _) acc) as [|[pcs [Hpc []]]].
+        + (* The program is done at this PC. *)
+          destruct H as [Hpc Hd].
+          eexists. apply run_noswap_ok. auto.
+        + (* The PC is not done, so we must have failed. *) 
+          destruct H as [Hin Hst].
+          eexists. apply run_noswap_fail. auto.
+        + (* The program can't possibly take a step if
+             it's not done and the set of valid PCs is
+             empty. This case is absurd. *)
+          destruct H as [pc' [acc' [Hin Hstep]]].
+          inversion Hstep; subst; inversion H6.
+      - (* How did the program terminate? *) 
+        destruct (valid_input_progress pc (set_remove Fin.eq_dec a v) acc) as [|[pcs H]].
+        + (* We were done without a, so we're still done now. *)
+          destruct H as [Hpc Hd]. rewrite Hpc.
+          eexists. apply run_noswap_ok. apply done_prog.
+        + (* We were not done without a. *)
+          destruct H as [Hw H].
+          (* Is a equal to the current address? *) 
+          destruct (Fin.eq_dec pcs a) as [Heq_dec|Heq_dec].
+          * (* a is equal to the current address. Now, we can resume,
+               even though we couldn't have before. *)
+            subst. destruct H.
+            { destruct (set_In_dec Fin.eq_dec a v).
+              - destruct (step_if_possible a v acc s) as [pc' [acc' Hstep]].
+                destruct (IHv acc' pc') as [st' Hr].
+                apply set_remove_nodup. auto.
+                exists st'. eapply run_noswap_trans. apply Hstep. apply Hr.
+              - eexists. apply run_noswap_fail. apply stuck_prog. assumption. }
+            { destruct H as [pc' [acc' [Hf]]].
+              exfalso. apply set_remove_2 in Hf. apply Hf. auto. auto. }
+          * (* a is not equal to the current address.
+               This case is not straightforward. *)
+            subst. destruct H.
+            { (* We were stuck without a, and since PC is not a, we're no less
+                 stuck now. *)
+              destruct H. eexists. eapply run_noswap_fail. apply stuck_prog.
+              intros Hin. apply H. apply set_remove_iff; auto. }
+            { (* We could move on without a. We can move on still. *)
+              destruct H as [pc' [acc' [Hin Hs]]].
+              destruct (step_if_possible pcs v acc) as [pc'' [acc'' Hs']].
+              - apply (set_remove_1 Fin.eq_dec pcs a v Hin).
+              - eexists. eapply run_noswap_trans. apply Hs'. 
+                destruct (IHv acc'' pc'') as [st' Hr].
+                + apply set_remove_nodup; auto.
+                + specialize (IHv acc'' pc'') as IH.
+    Admitted.
+
+    (*      specialize (IHv acc pc (set_remove_nodup Fin.eq_dec a Hnd)) as [st' Hr]. 
+            dependent induction Hr; subst.
+            { inversion H0. destruct n. inversion pcs. apply weaken_neq_to_fin in H3 as []. }
+            { destruct H.
+              - eexists. apply run_noswap_fail. apply stuck_prog.
+                intros Hin. specialize (set_remove_3 Fin.eq_dec v Hin Heq_dec) as Hin'.
+                destruct H. apply H. apply Hin'.
+              - destruct H as [pc' [acc' [Hin Hstep]]].
+                inversion H0; subst. apply weaken_one_inj in H. subst.
+                exfalso. apply H2. apply Hin. }
+            { destruct H.
+              - destruct H as [Hin Hst].
+                inversion H0; subst; apply weaken_one_inj in H; subst;
+                exfalso; apply Hin; assumption.
+              - assert (weaken_one pcs = weaken_one pcs) as Hrefl by reflexivity.
+                specialize (IHHr Hv0 (weaken_one pcs) Hrefl acc v Hnd a (or_intror H) Heq_dec Hv).
+                apply IHHr.
+
+          (* We were broken without a, but now we could be working again. *)
+          destruct H as [Hin Hst]. rewrite Hpc. admit.
+        + (* We could make a step without the a. We can still do so now. *)
+          
+
+          destruct H as [pc' [acc' [Hin Hstep]]].
+          destruct (IHv acc pc) as [st' Hr]. inversion Hr.
+          * inversion H; subst.
+            destruct n. inversion pcs. apply weaken_neq_to_fin in H5 as [].
+          * inversion H; subst.
+            apply weaken_one_inj in H3. subst.
+            exfalso. apply H5. apply Hin.
+          * subst. apply set_remove_1 in Hin. 
+            destruct (step_if_possible pcs v acc Hin) as [pc'' [acc'' Hstep']].
+            eexists. eapply run_noswap_trans. 
+            apply Hstep'. specialize (IHv acc'' pc'') as [st''' Hr']. 
+      
+
+      destruct (fin_big_or_small pc).
+      (* If we're at the end, we're done. *)
+      eexists. rewrite H. eapply run_noswap_ok.
+      (* We're not at the end. *) *)
+  End ValidInput.
+  (*
 
   Lemma set_add_idempotent : forall {A:Type}
     (Aeq_dec : forall x y : A, { x = y } + { x <> y })
@@ -168,44 +435,6 @@ Module DayEight (Import M:Int).
     P (@empty_set A) -> (forall (a : A) (s' : set A), P s' -> P (set_add Aeq_dec a s')) ->
     forall (s : set A), P s.
   Proof. Admitted.
-
-  Lemma weaken_one_inj : forall n (f1 f2 : fin n),
-    (weaken_one f1 = weaken_one f2 -> f1 = f2).
-  Proof. 
-    remember (fun {n} (a b : fin n) => weaken_one a = weaken_one b -> a = b) as P.
-    (* Base case for rect2 *)
-    assert (forall n, @P (S n) F1 F1).
-    {rewrite HeqP. intros n Heq. reflexivity. }
-    (* 'Impossible' cases for rect2. *)
-    assert (forall {n} (f : fin n), P (S n) F1 (FS f)).
-    {rewrite HeqP. intros n f Heq. simpl in Heq. inversion Heq. }
-    assert (forall {n} (f : fin n), P (S n) (FS f) F1).
-    {rewrite HeqP. intros n f Heq. simpl in Heq. inversion Heq. }
-    (* Recursive case for rect2. *)
-    assert (forall {n} (f g : fin n), P n f g -> P (S n) (FS f) (FS g)).
-    {rewrite HeqP. intros n f g IH Heq.
-      simpl in Heq. injection Heq as Heq'.
-      apply inj_pair2_eq_dec in Heq'.
-      - rewrite IH. reflexivity. assumption.
-      - apply eq_nat_dec. }
-
-    (* Actually apply recursion. *)
-    (* This can't be _the_ way to do this. *)
-    intros n.
-    specialize (@Fin.rect2 P H H0 H1 H2 n) as Hind.
-    rewrite HeqP in Hind. apply Hind.
-  Qed.
-
-  Lemma weaken_neq_to_fin : forall {n} (f : fin (S n)),
-    nat_to_fin (S n) <> weaken_one f.
-  Proof.
-    apply Fin.rectS; intros n Heq.
-    - inversion Heq.
-    - intros IH. simpl. intros Heq'.
-      injection Heq' as Hinj. apply inj_pair2_eq_dec in Hinj.
-      + simpl in IH. apply IH. apply Hinj.
-      + apply eq_nat_dec.
-  Qed.
 
   Lemma add_pc_safe_step : forall {n} (inp : input n) (pc : fin (S n)) i is acc st',
     step_noswap inp (pc, is, acc) st' ->
@@ -413,5 +642,5 @@ Module DayEight (Import M:Int).
 
 
     (* Stoppped here. *)
-  Admitted.
+     Admitted. *)
 End DayEight.
