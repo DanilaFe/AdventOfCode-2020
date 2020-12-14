@@ -41,12 +41,16 @@ Module DayEight (Import M:Int).
   Definition indices (n : nat) := VectorDef.t (fin n) n.
 
   (* Change a jump to a nop, or a nop to a jump. *)
-  Definition replace (i : inst) : inst :=
+  Definition swap (i : inst) : inst :=
     match i with
     | (add, t) => (add, t)
     | (nop, t) => (jmp, t)
     | (jmp, t) => (nop, t)
     end.
+
+  Inductive swappable : inst -> Prop :=
+  | swap_nop : forall t, swappable (nop, t)
+  | swap_jmp : forall t, swappable (jmp, t).
 
   (* Compute the destination jump index, an integer. *)
   Definition jump_t {n} (pc : fin n) (off : t) : t :=
@@ -96,20 +100,14 @@ Module DayEight (Import M:Int).
   (* One modification: we really want to use 'allowed' addresses,
      a set that shrinks as the program continues, rather than 'visited'
      addresses, a set that increases as the program continues. *)
-  Inductive step_noswap {n} : input n -> state n -> state n -> Prop :=
-    | step_noswap_add : forall inp pc' v acc t,
-        nth inp pc' = (add, t) ->
-        set_In pc' v ->
-        step_noswap inp (weaken_one pc', v, acc) (FS pc', set_remove Fin.eq_dec pc' v, M.add acc t)
-    | step_noswap_nop : forall inp pc' v acc t,
-        nth inp pc' = (nop, t) ->
-        set_In pc' v ->
-        step_noswap inp (weaken_one pc', v, acc) (FS pc', set_remove Fin.eq_dec pc' v, acc)
-    | step_noswap_jmp : forall inp pc' pc'' v acc t,
-        nth inp pc' = (jmp, t) ->
-        set_In pc' v ->
-        valid_jump_t pc' t = Some pc'' ->
-        step_noswap inp (weaken_one pc', v, acc) (pc'', set_remove Fin.eq_dec pc' v, acc).
+  Inductive step_noswap {n} : inst -> (fin n * t) -> (fin (S n) * t) -> Prop :=
+    | step_noswap_add : forall pc acc t,
+        step_noswap (add, t) (pc, acc) (FS pc, M.add acc t)
+    | step_noswap_nop : forall pc acc t,
+        step_noswap (nop, t) (pc, acc) (FS pc, acc)
+    | step_noswap_jmp : forall pc pc' acc t,
+        valid_jump_t pc t = Some pc' ->
+        step_noswap (jmp, t) (pc, acc) (pc', acc).
 
   Inductive done {n} : input n -> state n -> Prop :=
     | done_prog : forall inp v acc, done inp (nat_to_fin n, v, acc).
@@ -121,8 +119,35 @@ Module DayEight (Import M:Int).
   Inductive run_noswap {n} : input n -> state n -> state n -> Prop :=
     | run_noswap_ok : forall inp st, done inp st -> run_noswap inp st st
     | run_noswap_fail : forall inp st, stuck inp st -> run_noswap inp st st
-    | run_noswap_trans : forall inp st st' st'',
-        step_noswap inp st st' -> run_noswap inp st' st'' -> run_noswap inp st st''.
+    | run_noswap_trans : forall inp pc pc' v acc acc' st',
+        set_In pc v ->
+        step_noswap (nth inp pc) (pc, acc) (pc', acc') ->
+        run_noswap inp (pc', set_remove Fin.eq_dec pc v, acc') st' ->
+        run_noswap inp (weaken_one pc, v, acc) st'.
+
+  Inductive run_swap {n} : input n -> state n -> state n -> Prop :=
+    | run_swap_normal : forall inp pc pc' v acc acc' st',
+        set_In pc v ->
+        ~ swappable (nth inp pc) ->
+        step_noswap (nth inp pc) (pc, acc) (pc', acc') ->
+        run_swap inp (pc', set_remove Fin.eq_dec pc v, acc') st' ->
+        run_swap inp (weaken_one pc, v, acc) st'
+    | run_swap_swapped_ok : forall inp pc pc' v acc acc' st',
+        set_In pc v ->
+        swappable (nth inp pc) ->
+        step_noswap (swap (nth inp pc)) (pc, acc) (pc', acc') ->
+        run_noswap inp (pc', set_remove Fin.eq_dec pc v, acc') st' ->
+        done inp st' ->
+        run_swap inp (weaken_one pc, v, acc) st'
+    | run_swap_swapped_next : forall inp pc pc'w pc'n v acc acc'w acc'n st'w st'n,
+        set_In pc v ->
+        swappable (nth inp pc) ->
+        step_noswap (swap (nth inp pc)) (pc, acc) (pc'w, acc'w) ->
+        run_noswap inp (pc'w, set_remove Fin.eq_dec pc v, acc'w) st'w ->
+        stuck inp st'w ->
+        step_noswap (nth inp pc) (pc, acc) (pc'n, acc'n) ->
+        run_swap inp (pc'n, set_remove Fin.eq_dec pc v, acc'n) st'n ->
+        run_swap inp (weaken_one pc, v, acc) st'n.
 
   Inductive valid_inst {n} : inst -> fin n -> Prop :=
     | valid_inst_add : forall t f, valid_inst (add, t) f
@@ -140,19 +165,16 @@ Module DayEight (Import M:Int).
     Variable inp : input n.
     Hypothesis Hv : valid_input inp.
 
-    (* If the current address, which is not the end of the array, is
-       present in the "allowed" set, the program can continue. *)
-    Lemma step_if_possible : forall pcs v acc,
-      set_In pcs v ->
-      exists pc' acc', step_noswap inp (weaken_one pcs, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc').
+    Theorem valid_input_can_step : forall pc acc, exists pc' acc',
+      step_noswap (nth inp pc) (pc, acc) (pc', acc').
     Proof.
-      intros pcs v acc Hin.
-      remember (nth inp pcs) as instr. destruct instr as [op t]. destruct op.
-      + exists (FS pcs). exists (M.add acc t). apply step_noswap_add; auto.
-      + exists (FS pcs). exists acc. apply step_noswap_nop with t; auto.
-      + unfold valid_input in Hv. specialize (Hv pcs).
-        rewrite <- Heqinstr in Hv. inversion Hv; subst.
-        exists f'. exists acc. apply step_noswap_jmp with t; auto.
+      intros pc acc.
+      destruct (nth inp pc) eqn:Hop.
+      destruct o.
+      - exists (FS pc). exists (M.add acc t0). apply step_noswap_add. 
+      - exists (FS pc). exists acc. eapply step_noswap_nop.
+      - specialize (Hv pc). rewrite Hop in Hv. inversion Hv; subst.
+        exists f'. exists acc. eapply step_noswap_jmp. apply H0.
     Qed.
 
     (* A program is either done, stuck (at an invalid/visited address), or can step. *)
@@ -161,7 +183,7 @@ Module DayEight (Import M:Int).
       (exists pcs, pc = weaken_one pcs /\
         ((~ set_In pcs v /\ stuck inp (pc, v, acc)) \/
          (exists pc' acc', set_In pcs v /\
-         step_noswap inp (pc, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc')))).
+         step_noswap (nth inp pcs) (pcs, acc) (pc', acc')))).
     Proof.
       intros pc v acc.
       (* Have we reached the end? *)
@@ -174,8 +196,8 @@ Module DayEight (Import M:Int).
       destruct (set_In_dec Fin.eq_dec pcs v).
       - (* It is. *)
         right.
-        destruct (step_if_possible pcs v acc) as [pc' [acc' Hstep]]; auto.
-        exists pc'. exists acc'. split; auto.
+        destruct (valid_input_can_step pcs acc) as [pc' [acc' Hstep]].
+        exists pc'; exists acc'; auto.
       - (* It is not. *)
         left. split; auto. apply stuck_prog; auto.
     Qed.
@@ -186,30 +208,19 @@ Module DayEight (Import M:Int).
       { measure (length v) }:
       (exists pc', run_noswap inp (pc, v, acc) pc') :=
       match valid_input_progress pc v acc with
-      | or_introl (conj Heq Hdone) =>
-          inhabited_sig_to_exists 
-            (inhabits
-              (@exist (state n)
-                (fun x => run_noswap inp (pc, v, acc) x) (pc, v, acc) (run_noswap_ok _ _ Hdone)))
+      | or_introl (conj Heq Hdone) => _
       | or_intror (ex_intro _ pcs (conj Hw w)) =>
           match w with
-          | or_introl (conj Hnin Hstuck) =>
-              inhabited_sig_to_exists
-                (inhabits
-                  (@exist (state n)
-                    (fun x => run_noswap inp (pc, v, acc) x) (pc, v, acc) (run_noswap_fail _ _ Hstuck)))
+          | or_introl (conj Hnin Hstuck) => _
           | or_intror (ex_intro _ pc' (ex_intro _ acc' (conj Hin Hst))) =>
               match valid_input_terminates pc' (set_remove Fin.eq_dec pcs v) acc' (set_remove_nodup Fin.eq_dec pcs Hnd) with
-              | ex_intro _ pc'' Hrun =>
-                  inhabited_sig_to_exists
-                    (inhabits
-                      (@exist (state n)
-                        (fun x => run_noswap inp (pc, v, acc) x) pc''
-                          (run_noswap_trans _ _ (pc', set_remove Fin.eq_dec pcs v, acc') _ Hst Hrun)))
+              | ex_intro _ pc'' Hrun => _
               end
           end
       end.
-    Obligation 1. 
+    Obligation 1. eexists. apply run_noswap_ok. assumption. Qed.
+    Obligation 2. eexists. apply run_noswap_fail. assumption. Qed.
+    Obligation 3. 
       clear Heq_anonymous. clear valid_input_terminates. clear Hst.
       induction v.
       - inversion Hin.
@@ -220,5 +231,6 @@ Module DayEight (Import M:Int).
           specialize (IHv H2 H).
           simpl. rewrite Heq_dec. simpl. lia.
     Qed.
+    Obligation 4. eexists. eapply run_noswap_trans; auto. apply Hst. apply Hrun. Qed.
   End ValidInput.
 End DayEight.
