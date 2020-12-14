@@ -29,6 +29,7 @@ Module DayEight (Import M:Int).
     | Ok : t -> run_result
     | Fail : set (fin n) -> run_result.
 
+  (* A single program state .*)
   Definition state n : Type := (fin (S n) * set (fin n) * t).
 
   (* An instruction is a pair of an opcode and an argument. *)
@@ -39,6 +40,14 @@ Module DayEight (Import M:Int).
      addresses, which are used for calculating jumps. *)
   Definition indices (n : nat) := VectorDef.t (fin n) n.
 
+  (* Change a jump to a nop, or a nop to a jump. *)
+  Definition replace (i : inst) : inst :=
+    match i with
+    | (add, t) => (add, t)
+    | (nop, t) => (jmp, t)
+    | (jmp, t) => (nop, t)
+    end.
+
   (* Compute the destination jump index, an integer. *)
   Definition jump_t {n} (pc : fin n) (off : t) : t :=
     M.add (nat_to_t (proj1_sig (to_nat pc))) off.
@@ -47,18 +56,23 @@ Module DayEight (Import M:Int).
      Not all inputs are valid, so this may fail. *)
   Definition valid_jump_t {n} (pc : fin n) (off : t) : option (fin (S n)) := @clamp (S n) (jump_t pc off).
 
+  (* Cast a fin n to a fin (S n). *)
   Fixpoint weaken_one {n} (f : fin n) : fin (S n) :=
     match f with
     | F1 => F1
     | FS f' => FS (weaken_one f')
     end.
 
+  (* Convert a nat to fin. *)
   Fixpoint nat_to_fin (n : nat) : fin (S n) :=
     match n with
     | O => F1
     | S n' => FS (nat_to_fin n')
     end.
 
+  (* A finite natural is either its maximum value (aka nat_to_fin n),
+     or it's not thatbig, which means it can be cast down to
+     a fin (pred n). *)
   Lemma fin_big_or_small : forall {n} (f : fin (S n)),
     (f = nat_to_fin n) \/ (exists (f' : fin n), f = weaken_one f').
   Proof.
@@ -79,44 +93,6 @@ Module DayEight (Import M:Int).
         reflexivity.
   Qed.
   
-  Lemma weaken_one_inj : forall n (f1 f2 : fin n),
-    (weaken_one f1 = weaken_one f2 -> f1 = f2).
-  Proof. 
-    remember (fun {n} (a b : fin n) => weaken_one a = weaken_one b -> a = b) as P.
-    (* Base case for rect2 *)
-    assert (forall n, @P (S n) F1 F1).
-    {rewrite HeqP. intros n Heq. reflexivity. }
-    (* 'Impossible' cases for rect2. *)
-    assert (forall {n} (f : fin n), P (S n) F1 (FS f)).
-    {rewrite HeqP. intros n f Heq. simpl in Heq. inversion Heq. }
-    assert (forall {n} (f : fin n), P (S n) (FS f) F1).
-    {rewrite HeqP. intros n f Heq. simpl in Heq. inversion Heq. }
-    (* Recursive case for rect2. *)
-    assert (forall {n} (f g : fin n), P n f g -> P (S n) (FS f) (FS g)).
-    {rewrite HeqP. intros n f g IH Heq.
-      simpl in Heq. injection Heq as Heq'.
-      apply inj_pair2_eq_dec in Heq'.
-      - rewrite IH. reflexivity. assumption.
-      - apply eq_nat_dec. }
-
-    (* Actually apply recursion. *)
-    (* This can't be _the_ way to do this. *)
-    intros n.
-    specialize (@Fin.rect2 P H H0 H1 H2 n) as Hind.
-    rewrite HeqP in Hind. apply Hind.
-  Qed.
-
-  Lemma weaken_neq_to_fin : forall {n} (f : fin (S n)),
-    nat_to_fin (S n) <> weaken_one f.
-  Proof.
-    apply Fin.rectS; intros n Heq.
-    - inversion Heq.
-    - intros IH. simpl. intros Heq'.
-      injection Heq' as Hinj. apply inj_pair2_eq_dec in Hinj.
-      + simpl in IH. apply IH. apply Hinj.
-      + apply eq_nat_dec.
-  Qed.
-
   (* One modification: we really want to use 'allowed' addresses,
      a set that shrinks as the program continues, rather than 'visited'
      addresses, a set that increases as the program continues. *)
@@ -164,6 +140,8 @@ Module DayEight (Import M:Int).
     Variable inp : input n.
     Hypothesis Hv : valid_input inp.
 
+    (* If the current address, which is not the end of the array, is
+       present in the "allowed" set, the program can continue. *)
     Lemma step_if_possible : forall pcs v acc,
       set_In pcs v ->
       exists pc' acc', step_noswap inp (weaken_one pcs, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc').
@@ -177,28 +155,33 @@ Module DayEight (Import M:Int).
         exists f'. exists acc. apply step_noswap_jmp with t; auto.
     Qed.
 
+    (* A program is either done, stuck (at an invalid/visited address), or can step. *)
     Theorem valid_input_progress : forall pc v acc,
       (pc = nat_to_fin n /\ done inp (pc, v, acc)) \/
       (exists pcs, pc = weaken_one pcs /\
         ((~ set_In pcs v /\ stuck inp (pc, v, acc)) \/
-         (exists pc' acc', set_In pcs v /\ step_noswap inp (pc, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc')))).
+         (exists pc' acc', set_In pcs v /\
+         step_noswap inp (pc, v, acc) (pc', set_remove Fin.eq_dec pcs v, acc')))).
     Proof.
       intros pc v acc.
       (* Have we reached the end? *)
       destruct (fin_big_or_small pc).
       (* We're at the end, so we're done. *)
       left. rewrite H. split. reflexivity. apply done_prog.
-      (* We're not at the end. Is the PC valid? *)
+      (* We're not at the end. *)
       right. destruct H as [pcs H]. exists pcs. rewrite H. split. reflexivity.
+      (* We're not at the end. Is the PC valid? *)
       destruct (set_In_dec Fin.eq_dec pcs v).
       - (* It is. *)
         right.
         destruct (step_if_possible pcs v acc) as [pc' [acc' Hstep]]; auto.
         exists pc'. exists acc'. split; auto.
-      - (* It i not. *)
+      - (* It is not. *)
         left. split; auto. apply stuck_prog; auto.
     Qed.
 
+    (* A valid input always terminates, either by getting to the end of the program,
+       or by looping and thus getting stuck. *)
     Program Fixpoint valid_input_terminates (pc : fin (S n)) (v : set (fin n)) (acc : t) (Hnd : List.NoDup v)
       { measure (length v) }:
       (exists pc', run_noswap inp (pc, v, acc) pc') :=
@@ -237,7 +220,5 @@ Module DayEight (Import M:Int).
           specialize (IHv H2 H).
           simpl. rewrite Heq_dec. simpl. lia.
     Qed.
-
-    (* Stoppped here. *)
-     Admitted. *)
+  End ValidInput.
 End DayEight.
