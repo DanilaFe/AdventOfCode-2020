@@ -2,27 +2,14 @@ require "advent"
 INPUT = input(2020, 15).split(",").map(&.to_i32) 
 
 def run(input, times)
-  ls = {} of Int32 => {Int32,Int32}
-  last = 0
-  input.each_with_index do |n, i|
-    ls[n] ||= {-1,-1}
-    f,s = ls[n]
-    ls[n] = {i,f}
-    last = n
+  ls = {} of Int32 => Int32
+  temp = 0
+  (times-1).times do |i|
+    n = input[i]? || temp
+    temp = i - (ls[n]? || i)
+    ls[n] = i
   end
-  count = input.size
-  while count < times
-    n = 0
-    if ls[last][1] != -1
-      n = ls[last][0] - ls[last][1]
-    end
-    last = n
-    ls[n] ||= {-1,-1}
-    f,s = ls[n]
-    ls[n] = {count,f}
-    count += 1
-  end
-  last
+  return temp
 end
 
 def part1(input)
