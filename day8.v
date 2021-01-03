@@ -202,35 +202,54 @@ Module DayEight (Import M:Int).
         left. split; auto. apply stuck_prog; auto.
     Qed.
 
-    (* A valid input always terminates, either by getting to the end of the program,
-       or by looping and thus getting stuck. *)
-    Program Fixpoint valid_input_terminates (pc : fin (S n)) (v : set (fin n)) (acc : t) (Hnd : List.NoDup v)
-      { measure (length v) }:
-      (exists pc', run_noswap inp (pc, v, acc) pc') :=
-      match valid_input_progress pc v acc with
-      | or_introl (conj Heq Hdone) => _
-      | or_intror (ex_intro _ pcs (conj Hw w)) =>
-          match w with
-          | or_introl (conj Hnin Hstuck) => _
-          | or_intror (ex_intro _ pc' (ex_intro _ acc' (conj Hin Hst))) =>
-              match valid_input_terminates pc' (set_remove Fin.eq_dec pcs v) acc' (set_remove_nodup Fin.eq_dec pcs Hnd) with
-              | ex_intro _ pc'' Hrun => _
-              end
-          end
-      end.
-    Obligation 1. eexists. apply run_noswap_ok. assumption. Qed.
-    Obligation 2. eexists. apply run_noswap_fail. assumption. Qed.
-    Obligation 3. 
-      clear Heq_anonymous. clear valid_input_terminates. clear Hst.
-      induction v.
-      - inversion Hin.
-      - destruct (Fin.eq_dec pcs a) eqn:Heq_dec.
-        + simpl. rewrite Heq_dec. lia.
-        + inversion Hnd; subst.
-          inversion Hin. subst. exfalso. apply n0. auto.
-          specialize (IHv H2 H).
-          simpl. rewrite Heq_dec. simpl. lia.
+    Theorem list_length_induction {X : Type} (P : list X -> Prop) :
+      (forall l, (forall l', length l' < length l -> P l') -> P l) ->
+      forall l, P l.
+    Proof.
+      intros Hrec.
+      assert (forall (l l' : list X), length l' <= length l -> P l').
+      { induction l; intros l' Hlen; apply Hrec; intros l'0 Hlen0.
+        - simpl in Hlen. lia.
+        - apply IHl. simpl in Hlen. lia. }
+      intros l. apply H with l. lia.
     Qed.
-    Obligation 4. eexists. eapply run_noswap_trans; auto. apply Hst. apply Hrun. Qed.
+
+    Theorem set_remove_length : forall (f : fin n) (s : set (fin n)),
+      set_In f s ->
+      length (set_remove Fin.eq_dec f s) < length s.
+    Proof.
+      intros f s Hin.
+      induction s.
+      - inversion Hin.
+      - simpl. destruct (Fin.eq_dec f a) eqn:Heq.
+        + unfold lt. apply le_n. (* Why couldn't lia get this one? *)
+        + inversion Hin; subst. exfalso. apply n0. auto.
+          apply IHs in H. simpl. lia.
+    Qed.
+
+    Theorem valid_input_terminates : forall (pc : fin (S n)) (v : set (fin n)) (acc : t),
+      (exists pc', run_noswap inp (pc, v, acc) pc').
+    Proof.
+      intros pc v. generalize dependent pc.
+      induction v using list_length_induction.
+      intros pc acc.
+      destruct (valid_input_progress pc l acc) as [[_ Hd]|[pc' [Hw [[_ Hst]|[pc'' [acc'' [Hin Hst]]]]]]].
+      - (* We're done. *)
+        eexists. apply run_noswap_ok. apply Hd.
+      - (* We're stuck. *)
+        eexists. apply run_noswap_fail. apply Hst.
+      - (* We can make a step. This will remove our current PC from the valid list, *)
+        edestruct (H (set_remove Fin.eq_dec pc' l)).
+        (* Since the PC must be in the list, removing it makes the list smaller. *)
+        apply (set_remove_length _ _ Hin).
+        (* Without the current PC, our valid set shrinks.
+           Since this is the inductive step, we have assumed
+           that programs with smaller sets of valid PCs always
+           terminate. Thus, after we make the step, we're done. *)
+        exists x. subst. eapply run_noswap_trans.
+        + auto.
+        + apply Hst.
+        + apply H0.
+    Qed.
   End ValidInput.
 End DayEight.
