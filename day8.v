@@ -235,9 +235,9 @@ Module DayEight (Import M:Int).
       intros pc acc.
       destruct (valid_input_progress pc l acc) as [[_ Hd]|[pc' [Hw [[_ Hst]|[pc'' [acc'' [Hin Hst]]]]]]].
       - (* We're done. *)
-        eexists. apply run_noswap_ok. apply Hd.
+        eexists. apply run_noswap_ok. assumption.
       - (* We're stuck. *)
-        eexists. apply run_noswap_fail. apply Hst.
+        eexists. apply run_noswap_fail. assumption.
       - (* We can make a step. This will remove our current PC from the valid list, *)
         edestruct (H (set_remove Fin.eq_dec pc' l)).
         (* Since the PC must be in the list, removing it makes the list smaller. *)
